@@ -93,13 +93,13 @@ extern "C"
 // can't get stuck asleep due to comparator/divider tolerance.
 // ---------------------------------------------------------------------------
 #ifndef PWRMGT_VOLTAGE_CUTOFF
-#define PWRMGT_VOLTAGE_CUTOFF 3600       // Shut down when running below this
+#define PWRMGT_VOLTAGE_CUTOFF 3400       // Shut down when running below this
 #endif
 #ifndef PWRMGT_VOLTAGE_RESUME
-#define PWRMGT_VOLTAGE_RESUME 4000       // Turn back on once battery reaches this
+#define PWRMGT_VOLTAGE_RESUME 3800       // Turn back on once battery reaches this
 #endif
 #ifndef PWRMGT_VOLTAGE_BOOTLOCK
-#define PWRMGT_VOLTAGE_BOOTLOCK 3800     // Won't cold-boot below this (0 = disabled)
+#define PWRMGT_VOLTAGE_BOOTLOCK 3600     // Won't cold-boot below this (0 = disabled)
 #endif
 #ifndef PWRMGT_CHECK_INTERVAL_SECS
 #define PWRMGT_CHECK_INTERVAL_SECS 60    // How often to sample while running

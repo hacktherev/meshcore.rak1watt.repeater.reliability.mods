@@ -15,9 +15,9 @@ and browns out again - the node flickers and the battery never recovers.
 
 | State | Rule |
 |---|---|
-| Running | Battery checked every 60 s. Below **3.6 V** for 3 checks in a row -> hibernate |
-| Hibernating | Radio, PA, 5 V boost and 3V3_S rail off, MCU asleep. Re-checks every 5 min. Reboots at **4.0 V** or when USB is plugged in |
-| Cold boot | Won't start below **3.8 V** (USB power skips this) |
+| Running | Battery checked every 60 s. Below **3.4 V** for 3 checks in a row -> hibernate |
+| Hibernating | Radio, PA, 5 V boost and 3V3_S rail off, MCU asleep. Re-checks every 5 min. Reboots at **3.8 V** or when USB is plugged in |
+| Cold boot | Won't start below **3.6 V** (USB power skips this) |
 
 After a recovery, `get pwrmgt.bootreason` shows `Shutdown: Low Voltage`.
 
@@ -25,9 +25,9 @@ Thresholds live in `variants/rak3401/variant.h`, or override them in
 `variants/rak3401/platformio.ini` build flags:
 
 ```
--D PWRMGT_VOLTAGE_CUTOFF=3600
--D PWRMGT_VOLTAGE_RESUME=4000
--D PWRMGT_VOLTAGE_BOOTLOCK=3800
+-D PWRMGT_VOLTAGE_CUTOFF=3400
+-D PWRMGT_VOLTAGE_RESUME=3800
+-D PWRMGT_VOLTAGE_BOOTLOCK=3600
 -D PWRMGT_CHECK_INTERVAL_SECS=60
 -D PWRMGT_CUTOFF_CONSECUTIVE=3
 -D PWRMGT_HIBERNATE_CHECK_SECS=300
@@ -43,12 +43,14 @@ exact thresholds that match the telemetry voltage and can't get stuck off.
 Bench supply on the battery connector, **USB unplugged**, build with
 `-D MESH_DEBUG=1 -D PWRMGT_HIBERNATE_CHECK_SECS=30`:
 
-1. ~3.5 V -> shuts down within ~3 min
-2. 3.9 V -> stays off
-3. ~4.05 V -> reboots
+1. ~3.3 V -> shuts down within ~3 min
+2. 3.7 V -> stays off
+3. ~3.85 V -> reboots (allow up to the 30 s check interval)
 
-Check the node's reported voltage against a multimeter and adjust thresholds
-if it's off.
+Thresholds compare against the node's stock battery reading (no calibration
+needed). On the bench that reading tracked the supply closely around
+3.4-3.8 V and read ~0.15 V low near 4.35 V, so the cutoff/resume points were
+picked in the range where the stock reading is accurate.
 
 ## Building
 
