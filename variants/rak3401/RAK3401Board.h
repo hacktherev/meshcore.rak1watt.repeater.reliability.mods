@@ -15,10 +15,16 @@ class RAK3401Board : public NRF52BoardDCDC {
 protected:
 #ifdef NRF52_POWER_MANAGEMENT
   void initiateShutdown(uint8_t reason) override;
+  void lowVoltageHibernate(uint8_t reason);
+  uint32_t lowvolt_next_check = 0;
+  uint8_t lowvolt_count = 0;
 #endif
 public:
   RAK3401Board() : NRF52Board("RAK3401_OTA") {}
   void begin();
+#ifdef NRF52_POWER_MANAGEMENT
+  void loop() override;
+#endif
 
   #define BATTERY_SAMPLES 8
 

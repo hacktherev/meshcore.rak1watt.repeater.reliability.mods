@@ -2,6 +2,7 @@
 #include <Wire.h>
 
 #include "RAK3401Board.h"
+#include <nrf_soc.h>
 
 #ifdef NRF52_POWER_MANAGEMENT
 // Static configuration for power management
@@ -12,19 +13,92 @@ const PowerMgtConfig power_config = {
   .voltage_bootlock = PWRMGT_VOLTAGE_BOOTLOCK
 };
 
+static_assert(PWRMGT_VOLTAGE_RESUME > PWRMGT_VOLTAGE_CUTOFF,
+              "PWRMGT_VOLTAGE_RESUME must be above PWRMGT_VOLTAGE_CUTOFF (hysteresis)");
+static_assert(PWRMGT_VOLTAGE_BOOTLOCK <= PWRMGT_VOLTAGE_RESUME,
+              "PWRMGT_VOLTAGE_BOOTLOCK must not exceed PWRMGT_VOLTAGE_RESUME");
+
 void RAK3401Board::initiateShutdown(uint8_t reason) {
+  if (reason == SHUTDOWN_REASON_LOW_VOLTAGE ||
+      reason == SHUTDOWN_REASON_BOOT_PROTECT) {
+    lowVoltageHibernate(reason);  // does not return
+  }
+
   // Disable SKY66122 FEM (CSD+CPS LOW = shutdown, <1 uA)
   digitalWrite(SX126X_POWER_EN, LOW);
 
   // Disable 3V3 switched peripherals and 5V boost
   digitalWrite(PIN_3V3_EN, LOW);
 
-  if (reason == SHUTDOWN_REASON_LOW_VOLTAGE ||
-      reason == SHUTDOWN_REASON_BOOT_PROTECT) {
-    configureVoltageWake(power_config.lpcomp_ain_channel, power_config.lpcomp_refsel);
+  enterSystemOff(reason);
+}
+
+// Low-voltage hibernate: everything power-hungry off, MCU sleeping, battery
+// re-checked periodically. Reboots once VBAT >= PWRMGT_VOLTAGE_RESUME (or USB
+// power appears), so the battery gets a real chance to recover via solar
+// instead of flickering the node on and off.
+void RAK3401Board::lowVoltageHibernate(uint8_t reason) {
+  MESH_DEBUG_PRINTLN("PWRMGT: Low voltage (%s) - hibernating until %u mV",
+                     getShutdownReasonString(reason), PWRMGT_VOLTAGE_RESUME);
+
+  // At runtime the radio/display/GPS are live; put them to sleep properly.
+  // At boot (BOOT_PROTECT) they haven't been initialised yet, so skip that.
+  if (reason == SHUTDOWN_REASON_LOW_VOLTAGE) {
+    shutdownPeripherals();
   }
 
-  enterSystemOff(reason);
+  // Disable SKY66122 FEM (CSD+CPS LOW = shutdown, <1 uA)
+  digitalWrite(SX126X_POWER_EN, LOW);
+  // Disable 3V3_S switched peripherals and the RAK13302 5V boost
+  digitalWrite(PIN_3V3_EN, LOW);
+
+  // Record why we went down so `get pwrmgt.bootreason` shows it after resume
+  uint8_t sd_enabled = 0;
+  sd_softdevice_is_enabled(&sd_enabled);
+  if (sd_enabled) {
+    sd_power_gpregret_clr(1, 0xFF);
+    sd_power_gpregret_set(1, reason);
+  } else {
+    NRF_POWER->GPREGRET2 = reason;
+  }
+
+  for (;;) {
+    // FreeRTOS tickless idle: the MCU sleeps (System ON, RTC running) here
+    delay((uint32_t)PWRMGT_HIBERNATE_CHECK_SECS * 1000UL);
+
+    if (isExternalPowered()) break;  // USB plugged in: come back immediately
+
+    uint16_t mv = getBattMilliVolts();
+    MESH_DEBUG_PRINTLN("PWRMGT: Hibernate check %u mV (resume at %u mV)", mv, PWRMGT_VOLTAGE_RESUME);
+    if (mv >= PWRMGT_VOLTAGE_RESUME) break;
+  }
+
+  // Clean restart; boot check will pass since VBAT >= RESUME >= BOOTLOCK
+  NVIC_SystemReset();
+}
+
+// Runtime monitor, called from the main loop via board.loop()
+void RAK3401Board::loop() {
+  if (PWRMGT_VOLTAGE_CUTOFF == 0) return;  // runtime cutoff disabled
+  if ((int32_t)(millis() - lowvolt_next_check) < 0) return;
+  lowvolt_next_check = millis() + (uint32_t)PWRMGT_CHECK_INTERVAL_SECS * 1000UL;
+
+  if (isExternalPowered()) {
+    lowvolt_count = 0;
+    return;
+  }
+
+  uint16_t mv = getBattMilliVolts();
+  // Ignore obviously bogus readings (<1V) - same guard as the boot check
+  if (mv > 1000 && mv < PWRMGT_VOLTAGE_CUTOFF) {
+    lowvolt_count++;
+    MESH_DEBUG_PRINTLN("PWRMGT: Low battery %u mV (%u/%u)", mv, lowvolt_count, PWRMGT_CUTOFF_CONSECUTIVE);
+    if (lowvolt_count >= PWRMGT_CUTOFF_CONSECUTIVE) {
+      initiateShutdown(SHUTDOWN_REASON_LOW_VOLTAGE);
+    }
+  } else {
+    lowvolt_count = 0;
+  }
 }
 #endif
 

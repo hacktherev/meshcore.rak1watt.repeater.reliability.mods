@@ -78,9 +78,38 @@ extern "C"
 	static const uint8_t A7 = PIN_A7;
 #define ADC_RESOLUTION 14
 
-// Power management boot protection threshold (millivolts)
-// Set to 0 to disable boot protection
-#define PWRMGT_VOLTAGE_BOOTLOCK 3300   // Won't boot below this voltage (mV)
+// ---------------------------------------------------------------------------
+// Low-voltage protection with hysteresis (all values in mV, as reported by
+// getBattMilliVolts(), i.e. the same number you see in telemetry/CLI).
+// Any of these can be overridden from platformio.ini with -D NAME=value.
+//
+//   running  --(VBAT < CUTOFF for N checks)-->  hibernate
+//   hibernate --(VBAT >= RESUME, or USB power)--> reboot
+//   cold boot --(VBAT < BOOTLOCK)--> hibernate
+//
+// In hibernate the LoRa radio, SKY66122 PA, 5V boost and 3V3_S rail are off
+// and the MCU sleeps, waking every PWRMGT_HIBERNATE_CHECK_SECS to re-read the
+// battery. Unlike LPCOMP/SYSTEMOFF wake, the thresholds are exact and the node
+// can't get stuck asleep due to comparator/divider tolerance.
+// ---------------------------------------------------------------------------
+#ifndef PWRMGT_VOLTAGE_CUTOFF
+#define PWRMGT_VOLTAGE_CUTOFF 3600       // Shut down when running below this
+#endif
+#ifndef PWRMGT_VOLTAGE_RESUME
+#define PWRMGT_VOLTAGE_RESUME 4000       // Turn back on once battery reaches this
+#endif
+#ifndef PWRMGT_VOLTAGE_BOOTLOCK
+#define PWRMGT_VOLTAGE_BOOTLOCK 3800     // Won't cold-boot below this (0 = disabled)
+#endif
+#ifndef PWRMGT_CHECK_INTERVAL_SECS
+#define PWRMGT_CHECK_INTERVAL_SECS 60    // How often to sample while running
+#endif
+#ifndef PWRMGT_CUTOFF_CONSECUTIVE
+#define PWRMGT_CUTOFF_CONSECUTIVE 3      // Low samples in a row before cutoff (ignores TX sag)
+#endif
+#ifndef PWRMGT_HIBERNATE_CHECK_SECS
+#define PWRMGT_HIBERNATE_CHECK_SECS 300  // How often to re-check battery while hibernating
+#endif
 // LPCOMP wake configuration (voltage recovery from SYSTEMOFF)
 // AIN3 = P0.05 = PIN_A0 / PIN_VBAT_READ
 #define PWRMGT_LPCOMP_AIN 3
